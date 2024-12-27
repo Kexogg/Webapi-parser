@@ -35,14 +35,14 @@ def read_products(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)
     products = db.query(Product).offset(skip).limit(limit).all()
     return products
 
-@app.get("/products/{product_id}")
-def read_product(product_id: int, db: Session = Depends(get_db)):
-    product = db.query(Product).filter(Product.id == product_id).first()
+@app.get("/products/{product_code}")
+def read_product(product_code: str, db: Session = Depends(get_db)):
+    product = db.query(Product).filter(Product.code == product_code).first()
     return product
 
-@app.put("/products/{product_id}")
-def update_product(product_id: int, name: str, price: float, db: Session = Depends(get_db)):
-    product = db.query(Product).filter(Product.id == product_id).first()
+@app.put("/products/{product_code}")
+def update_product(product_code: str, name: str, price: float, db: Session = Depends(get_db)):
+    product = db.query(Product).filter(Product.code == product_code).first()
     if product:
         product.name = name
         product.price = price
@@ -52,9 +52,9 @@ def update_product(product_id: int, name: str, price: float, db: Session = Depen
     else:
         return {"error": "Продукт не найден"}
 
-@app.delete("/products/{product_id}")
-def delete_product(product_id: int, db: Session = Depends(get_db)):
-    product = db.query(Product).filter(Product.id == product_id).first()
+@app.delete("/products/{product_code}")
+def delete_product(product_code: str, db: Session = Depends(get_db)):
+    product = db.query(Product).filter(Product.code == product_code).first()
     if product:
         db.delete(product)
         db.commit()
@@ -92,6 +92,14 @@ def delete_category(category_id: str, db: Session = Depends(get_db)):
         db.delete(category)
         db.commit()
         return {"message": "Категория удалена"}
+    else:
+        return {"error": "Категория не найдена"}
+
+@app.get("/categories/{category_id}/products")
+def read_category_products(category_id: str, db: Session = Depends(get_db)):
+    category = db.query(Category).filter(Category.id == category_id).first()
+    if category:
+        return category.products
     else:
         return {"error": "Категория не найдена"}
 

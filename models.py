@@ -1,5 +1,4 @@
-
-from sqlalchemy import Column, Integer, String, Float, ForeignKey
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, Table
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -11,15 +10,19 @@ class Category(Base):
     parent_id = Column(String, ForeignKey('categories.id'), nullable=True)
 
     subcategories = relationship("Category", backref='parent', remote_side=[id])
-    products = relationship("Product", back_populates="category")
+    products = relationship("Product", secondary="product_categories", back_populates="categories")
 
 class Product(Base):
     __tablename__ = "products"
 
-    id = Column(Integer, primary_key=True, index=True)
-    code = Column(String, index=True)
+    code = Column(String, primary_key=True, index=True)
     name = Column(String, index=True)
     price = Column(Float)
-    category_id = Column(String, ForeignKey('categories.id'))
 
-    category = relationship("Category", back_populates="products")
+    categories = relationship("Category", secondary="product_categories", back_populates="products")
+
+class ProductCategory(Base):
+    __tablename__ = "product_categories"
+
+    product_code = Column(String, ForeignKey('products.code'), primary_key=True)
+    category_id = Column(String, ForeignKey('categories.id'), primary_key=True)

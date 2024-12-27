@@ -1,7 +1,6 @@
-
 import requests
 from sqlalchemy.orm import Session
-from models import Category, Product
+from models import Category, Product, ProductCategory
 
 def get_categories(session: Session, parent_id=None):
     url = "https://api-ecomm.sdvor.com/occ/v2/sd/catalogs/sdvrProductCatalog/Online/"
@@ -46,10 +45,14 @@ def get_products(session: Session, category_id):
             product = Product(
                 code=product_data['code'],
                 name=product_data['name'],
-                price=price,
-                category_id=category_id
+                price=price
             )
             session.merge(product)
+            product_category = ProductCategory(
+                product_code=product_data['code'],
+                category_id=category_id
+            )
+            session.merge(product_category)
         session.commit()
     else:
         print(f"Ошибка получения продуктов для категории {category_id}: {response.status_code}")
