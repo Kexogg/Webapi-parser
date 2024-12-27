@@ -1,9 +1,9 @@
 import asyncio
 
-from fastapi import FastAPI, Depends, BackgroundTasks, WebSocket
+from fastapi import FastAPI, Depends, BackgroundTasks, WebSocket, HTTPException
 from sqlalchemy.orm import Session
 from database import SessionLocal, engine
-from models import Base, Category, Product
+from models import Base, Category, Product, ProductCategory
 from parser import get_categories, get_products
 from websocket_manager import WebSocketManager
 
@@ -42,6 +42,54 @@ async def parse_data(background_tasks: BackgroundTasks, db: Session = Depends(ge
 
 # Маршруты для продуктов
 
+@app.post("/products")
+async def create_product(name: str, price: float, category_id: str, code: str, db: Session = Depends(get_db)):
+    category = db.query(Category).filter(Category.id == category_id).first()
+    if not category:
+        raise HTTPException(status_code=404, detail="Category not found")
+
+    product = db.query(Product).filter(Product.code == code).first()
+    if product:
+        raise HTTPException(status_code=409, detail="Product with this code already exists")
+
+    product = Product(name=name, price=price, code=code)
+    product_category = ProductCategory(product_code=code, category_id=category_id)
+    db.add(product)
+    db.add(product_category)
+    db.commit()
+    db.refresh(product)
+    db.refresh(product_category)
+    
+    await websocket_manager.broadcast({
+        "action": "product_created",
+        "product": {
+            "code": product.code,
+            "name": product.name,
+            "price": product.price,
+            "category_id": product_category.category_id
+        }
+    })
+    return product
+
+@app.post("/categories")
+async def create_category(name: str, id: str, db: Session = Depends(get_db)):
+    category = db.query(Category).filter(Category.id == id).first()
+    if category:
+        raise HTTPException(status_code=409, detail="Category with this id already exists")
+    category = Category(name=name, id=id)
+    db.add(category)
+    db.commit()
+    db.refresh(category)
+    
+    await websocket_manager.broadcast({
+        "action": "category_created",
+        "category": {
+            "id": category.id,
+            "name": category.name
+        }
+    })
+    return category
+
 @app.get("/products")
 def read_products(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     products = db.query(Product).offset(skip).limit(limit).all()
@@ -70,7 +118,7 @@ async def update_product(product_code: str, name: str, price: float, db: Session
         })
         return product
     else:
-        return {"error": "Продукт не найден"}
+        raise HTTPException(status_code=404, detail="Product not found")
 
 @app.delete("/products/{product_code}")
 async def delete_product(product_code: str, db: Session = Depends(get_db)):
@@ -82,9 +130,9 @@ async def delete_product(product_code: str, db: Session = Depends(get_db)):
             "action": "product_deleted",
             "product_code": product_code
         })
-        return {"message": "Продукт удален"}
+        return {"message": f"Deleted product with code ${product_code}"}
     else:
-        return {"error": "Продукт не найден"}
+        raise HTTPException(status_code=404, detail="Product not found")
 
 @app.get("/categories")
 def read_categories(db: Session = Depends(get_db)):
@@ -112,7 +160,7 @@ async def update_category(category_id: str, name: str, db: Session = Depends(get
         })
         return category
     else:
-        return {"error": "Категория не найдена"}
+        raise HTTPException(status_code=404, detail="Category not found")
 
 @app.delete("/categories/{category_id}")
 async def delete_category(category_id: str, db: Session = Depends(get_db)):
@@ -126,7 +174,7 @@ async def delete_category(category_id: str, db: Session = Depends(get_db)):
         })
         return {"message": "Категория удалена"}
     else:
-        return {"error": "Категория не найдена"}
+        raise HTTPException(status_code=404, detail="Category not found")
 
 @app.get("/categories/{category_id}/products")
 def read_category_products(category_id: str, db: Session = Depends(get_db)):
@@ -134,7 +182,7 @@ def read_category_products(category_id: str, db: Session = Depends(get_db)):
     if category:
         return category.products
     else:
-        return {"error": "Категория не найдена"}
+        raise HTTPException(status_code=404, detail="Category not found")
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):

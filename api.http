@@ -18,6 +18,12 @@ GET http://127.0.0.1:8000/categories/{{category_id}}/products
 ### Get all categories
 GET http://127.0.0.1:8000/categories
 
+### Create new product
+POST http://127.0.0.1:8000/products?name={{product_name}}&price={{product_price}}&category_id={{category_id}}&code={{product_id}}
+
+### Create new category
+POST http://127.0.0.1:8000/categories?name=New Category&id={{category_id}}
+
 ### Update product
 PUT http://127.0.0.1:8000/products/{{product_id}}?name={{product_name}}&price={{product_price}}
 
