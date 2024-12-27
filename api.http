@@ -1,0 +1,31 @@
+@category_id = nasosy-179001
+@product_name = Product
+@product_price = 10
+@product_id = 610279
+
+### Parse data
+POST http://127.0.0.1:8000/parse
+
+### Get product by id
+GET http://127.0.0.1:8000/products/{{product_id}}
+
+### Get all products
+GET http://127.0.0.1:8000/products
+
+### Get products in category
+GET http://127.0.0.1:8000/categories/{{category_id}}/products
+
+### Get all categories
+GET http://127.0.0.1:8000/categories
+
+### Update product
+PUT http://127.0.0.1:8000/products/{{product_id}}?name={{product_name}}&price={{product_price}}
+
+### Update category
+PUT http://127.0.0.1:8000/categories/{{category_id}}?name=Test Category
+
+### Delete product
+DELETE http://127.0.0.1:8000/products/{{product_id}}
+
+### Delete category
+DELETE http://127.0.0.1:8000/categories/{{category_id}}
