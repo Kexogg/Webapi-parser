@@ -176,7 +176,7 @@ async def add_product_to_category(product_code: str, category_id: str, db: Sessi
         await websocket_manager.broadcast({
             "action": "product_added_to_category",
             "product_code": product.code,
-            "category_id": category
+            "category_id": category.id
         })
         return {
             "code": product.code,
@@ -192,13 +192,15 @@ async def remove_product_from_category(product_code: str, category_id: str, db: 
     product = db.query(Product).filter(Product.code == product_code).first()
     category = db.query(Category).filter(Category.id == category_id).first()
     if product and category:
+        if category not in product.categories:
+            raise HTTPException(status_code=400, detail="Product not in category")
         product.categories.remove(category)
         db.commit()
         db.refresh(product)
         await websocket_manager.broadcast({
             "action": "product_removed_from_category",
             "product_code": product.code,
-            "category_id": category
+            "category_id": category.id
         })
         return {
             "code": product.code,
