@@ -1,8 +1,8 @@
 import asyncio
-from http.client import HTTPResponse
 
 from fastapi import FastAPI, Depends, BackgroundTasks, WebSocket, HTTPException
 from sqlalchemy.orm import Session
+
 from database import SessionLocal, engine
 from models import Base, Category, Product
 from parser import get_categories, get_products
