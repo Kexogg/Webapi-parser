@@ -1,6 +1,7 @@
 import asyncio
+from http.client import HTTPResponse
 
-from fastapi import FastAPI, Depends, BackgroundTasks, WebSocket
+from fastapi import FastAPI, Depends, BackgroundTasks, WebSocket, HTTPException
 from sqlalchemy.orm import Session
 from database import SessionLocal, engine
 from models import Base, Category, Product
@@ -12,12 +13,14 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI()
 websocket_manager = WebSocketManager()
 
+
 def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
+
 
 def start_parsing(db: Session):
     get_categories(db)
@@ -32,6 +35,7 @@ def start_parsing(db: Session):
         "action": "parsing_finished"
     }))
 
+
 @app.post("/parse")
 async def parse_data(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     await websocket_manager.broadcast({
@@ -40,16 +44,20 @@ async def parse_data(background_tasks: BackgroundTasks, db: Session = Depends(ge
     background_tasks.add_task(start_parsing, db)
     return {"message": "parsing_started"}
 
+
 # Маршруты для продуктов
 
 @app.get("/products")
-def read_products(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+async def read_products(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     products = db.query(Product).offset(skip).limit(limit).all()
     return products
 
+
 @app.get("/products/{product_code}")
-def read_product(product_code: str, db: Session = Depends(get_db)):
+async def read_product(product_code: str, db: Session = Depends(get_db)):
     product = db.query(Product).filter(Product.code == product_code).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
     return product
 
 @app.put("/products/{product_code}")
@@ -70,7 +78,8 @@ async def update_product(product_code: str, name: str, price: float, db: Session
         })
         return product
     else:
-        return {"error": "Продукт не найден"}
+        raise HTTPException(status_code=404, detail="Product not found")
+
 
 @app.delete("/products/{product_code}")
 async def delete_product(product_code: str, db: Session = Depends(get_db)):
@@ -84,17 +93,22 @@ async def delete_product(product_code: str, db: Session = Depends(get_db)):
         })
         return {"message": f"Deleted product with code ${product_code}"}
     else:
-        return {"error": "Продукт не найден"}
+        raise HTTPException(status_code=404, detail="Product not found")
+
 
 @app.get("/categories")
-def read_categories(db: Session = Depends(get_db)):
+async def read_categories(db: Session = Depends(get_db)):
     categories = db.query(Category).all()
     return categories
 
+
 @app.get("/categories/{category_id}")
-def read_category(category_id: str, db: Session = Depends(get_db)):
+async def read_category(category_id: str, db: Session = Depends(get_db)):
     category = db.query(Category).filter(Category.id == category_id).first()
+    if not category:
+        raise HTTPException(status_code=404, detail="Category not found")
     return category
+
 
 @app.put("/categories/{category_id}")
 async def update_category(category_id: str, name: str, db: Session = Depends(get_db)):
@@ -112,7 +126,8 @@ async def update_category(category_id: str, name: str, db: Session = Depends(get
         })
         return category
     else:
-        return {"error": "Категория не найдена"}
+        raise HTTPException(status_code=404, detail="Category not found")
+
 
 @app.delete("/categories/{category_id}")
 async def delete_category(category_id: str, db: Session = Depends(get_db)):
@@ -124,17 +139,75 @@ async def delete_category(category_id: str, db: Session = Depends(get_db)):
             "action": "category_deleted",
             "category_id": category_id
         })
-        return {"message": "Категория удалена"}
+        return
     else:
-        return {"error": "Категория не найдена"}
+        raise HTTPException(status_code=404, detail="Category not found")
+
 
 @app.get("/categories/{category_id}/products")
-def read_category_products(category_id: str, db: Session = Depends(get_db)):
+async def read_category_products(category_id: str, skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     category = db.query(Category).filter(Category.id == category_id).first()
     if category:
-        return category.products
+        products = db.query(Product).filter(Product.categories.any(id=category_id)).offset(skip).limit(limit).all()
+        return products
     else:
-        return {"error": "Категория не найдена"}
+        raise HTTPException(status_code=404, detail="Category not found")
+
+
+@app.get("/products/{product_code}/categories")
+def read_product_categories(product_code: str, db: Session = Depends(get_db)):
+    product = db.query(Product).filter(Product.code == product_code).first()
+    if product:
+        return product.categories
+    else:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+
+@app.post("/products/{product_code}/categories/{category_id}")
+async def add_product_to_category(product_code: str, category_id: str, db: Session = Depends(get_db)):
+    product = db.query(Product).filter(Product.code == product_code).first()
+    category = db.query(Category).filter(Category.id == category_id).first()
+    if product and category:
+        if category in product.categories:
+            raise HTTPException(status_code=400, detail="Product already in category")
+        product.categories.append(category)
+        db.commit()
+        db.refresh(product)
+        await websocket_manager.broadcast({
+            "action": "product_added_to_category",
+            "product_code": product.code,
+            "category_id": category
+        })
+        return {
+            "code": product.code,
+            "name": product.name,
+            "price": product.price,
+            "categories": product.categories
+        }
+    raise HTTPException(status_code=404, detail="Product or category not found")
+
+
+@app.delete("/products/{product_code}/categories/{category_id}")
+async def remove_product_from_category(product_code: str, category_id: str, db: Session = Depends(get_db)):
+    product = db.query(Product).filter(Product.code == product_code).first()
+    category = db.query(Category).filter(Category.id == category_id).first()
+    if product and category:
+        product.categories.remove(category)
+        db.commit()
+        db.refresh(product)
+        await websocket_manager.broadcast({
+            "action": "product_removed_from_category",
+            "product_code": product.code,
+            "category_id": category
+        })
+        return {
+            "code": product.code,
+            "name": product.name,
+            "price": product.price,
+            "categories": product.categories
+        }
+    raise HTTPException(status_code=404, detail="Product or category not found")
+
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -149,6 +222,8 @@ async def websocket_endpoint(websocket: WebSocket):
     finally:
         websocket_manager.disconnect(websocket)
 
+
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("main:app", host="127.0.0.1", port=8000)
